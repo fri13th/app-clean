@@ -20,3 +20,4 @@ AppClean.xcodeproj/
 
 # Claude Code
 .claude/
+*.zip
