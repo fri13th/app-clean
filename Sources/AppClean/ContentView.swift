@@ -17,6 +17,7 @@ struct ContentView: View {
     @State private var isTargeted = false
     @State private var statusMessage: String?
     @State private var isScanning = false
+    @State private var fdaDismissed = false
 
     var body: some View {
         VStack(spacing: 0) {
@@ -31,6 +32,9 @@ struct ContentView: View {
                 .pickerStyle(.segmented)
                 .padding()
                 Divider()
+                if !fdaDismissed && !AppScanner.hasFullDiskAccess() {
+                    fdaBanner
+                }
                 tabContent
             }
         }
@@ -45,6 +49,25 @@ struct ContentView: View {
             }
         }
         .padding()
+    }
+
+    private var fdaBanner: some View {
+        HStack(spacing: 10) {
+            Image(systemName: "lock.shield").foregroundStyle(.orange)
+            VStack(alignment: .leading, spacing: 2) {
+                Text("Full Disk Access not granted").font(.callout).bold()
+                Text("Some TCC-protected paths won't be readable or deletable without it.").font(.caption).foregroundStyle(.secondary)
+            }
+            Spacer()
+            Button("Open Settings") {
+                if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_AllFiles") {
+                    NSWorkspace.shared.open(url)
+                }
+            }
+            Button("Dismiss") { fdaDismissed = true }
+        }
+        .padding(.horizontal, 16).padding(.vertical, 10)
+        .background(Color.orange.opacity(0.12))
     }
 
     @ViewBuilder
@@ -159,7 +182,16 @@ struct ContentView: View {
                             .foregroundStyle(selected.contains(item.id) ? Color.accentColor : .secondary)
                         VStack(alignment: .leading, spacing: 2) {
                             Text(item.displayPath).font(.system(.body, design: .monospaced)).lineLimit(1).truncationMode(.middle)
-                            Text(item.category).font(.caption).foregroundStyle(.secondary)
+                            HStack(spacing: 6) {
+                                Text(item.category).font(.caption).foregroundStyle(.secondary)
+                                if item.isRunning {
+                                    Text("RUNNING").font(.caption2).bold()
+                                        .padding(.horizontal, 5).padding(.vertical, 1)
+                                        .background(Color.orange.opacity(0.25))
+                                        .foregroundStyle(.orange)
+                                        .clipShape(RoundedRectangle(cornerRadius: 3))
+                                }
+                            }
                         }
                         Spacer()
                         Text(item.sizeFormatted).foregroundStyle(.secondary).monospacedDigit()
@@ -253,7 +285,8 @@ struct ContentView: View {
         selected = []
         statusMessage = nil
         DispatchQueue.global(qos: .userInitiated).async {
-            let found = AppScanner.scan(for: info)
+            let raw = AppScanner.scan(for: info)
+            let found = AppScanner.markRunning(raw, running: AppScanner.runningBundleIDs())
             DispatchQueue.main.async {
                 items = found
                 selected = Set(found.map { $0.id })
@@ -273,7 +306,8 @@ struct ContentView: View {
         selected = []
         statusMessage = nil
         DispatchQueue.global(qos: .userInitiated).async {
-            let found = AppScanner.scanSystem()
+            let raw = AppScanner.scanSystem()
+            let found = AppScanner.markRunning(raw, running: AppScanner.runningBundleIDs())
             DispatchQueue.main.async {
                 items = found
                 selected = Set(found.map { $0.id })

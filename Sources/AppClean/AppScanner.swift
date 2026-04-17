@@ -1,4 +1,5 @@
 import Foundation
+import AppKit
 
 struct AppInfo: Hashable {
     let bundleURL: URL
@@ -266,6 +267,41 @@ enum AppScanner {
         return items.sorted { $0.sizeBytes > $1.sizeBytes }
     }
 
+    static func runningBundleIDs() -> Set<String> {
+        Set(NSWorkspace.shared.runningApplications.compactMap { $0.bundleIdentifier?.lowercased() })
+    }
+
+    static func markRunning(_ items: [LeftoverItem], running: Set<String>) -> [LeftoverItem] {
+        guard !running.isEmpty else { return items }
+        return items.map { item in
+            var it = item
+            let name = item.url.lastPathComponent.lowercased()
+            let noExt = (name as NSString).deletingPathExtension
+            for bid in running {
+                if noExt == bid
+                    || noExt.hasPrefix("\(bid).")
+                    || noExt.hasPrefix("\(bid)-")
+                    || name.contains(bid) {
+                    it.isRunning = true
+                    break
+                }
+            }
+            return it
+        }
+    }
+
+    static func hasFullDiskAccess() -> Bool {
+        let home = FileManager.default.homeDirectoryForCurrentUser.path
+        // ~/Library/Safari and ~/Library/Mail require FDA on macOS Mojave+.
+        // Probe either — return true if any existing one is listable.
+        for probe in ["\(home)/Library/Safari", "\(home)/Library/Mail"] {
+            if FileManager.default.fileExists(atPath: probe) {
+                return (try? FileManager.default.contentsOfDirectory(atPath: probe)) != nil
+            }
+        }
+        return false  // Inconclusive — assume no; a banner will still be shown, user can dismiss.
+    }
+
     private static func isTeamIDPrefixed(_ entry: String, suffix: String) -> Bool {
         guard entry.hasSuffix(suffix) else { return false }
         let prefix = entry.dropLast(suffix.count)
@@ -289,10 +325,18 @@ enum AppScanner {
             return (attrs?[.size] as? Int64) ?? 0
         }
         var total: Int64 = 0
-        if let enumerator = fm.enumerator(at: url, includingPropertiesForKeys: [.fileSizeKey], options: []) {
+        let seen = NSMutableSet()
+        let keys: [URLResourceKey] = [.fileSizeKey, .isRegularFileKey, .fileResourceIdentifierKey]
+        if let enumerator = fm.enumerator(at: url, includingPropertiesForKeys: keys, options: []) {
             for case let fileURL as URL in enumerator {
-                let values = try? fileURL.resourceValues(forKeys: [.fileSizeKey])
-                total += Int64(values?.fileSize ?? 0)
+                guard let values = try? fileURL.resourceValues(forKeys: Set(keys)),
+                      values.isRegularFile == true,
+                      let size = values.fileSize else { continue }
+                if let fid = values.fileResourceIdentifier {
+                    if seen.contains(fid) { continue }
+                    seen.add(fid)
+                }
+                total += Int64(size)
             }
         }
         return total

@@ -5,6 +5,7 @@ struct LeftoverItem: Identifiable, Hashable {
     let url: URL
     let category: String
     let sizeBytes: Int64
+    var isRunning: Bool = false
 
     var displayPath: String {
         let home = FileManager.default.homeDirectoryForCurrentUser.path
