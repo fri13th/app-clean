@@ -321,18 +321,67 @@ struct ContentView: View {
     private func moveSelectedToTrash() {
         let toTrash = items.filter { selected.contains($0.id) }
         let urls = toTrash.map { $0.url }
-        TrashService.recycle(urls) { result in
-            DispatchQueue.main.async {
-                switch result {
-                case .success(let trashed):
-                    statusMessage = "Moved \(trashed.count) items to Trash."
-                    items.removeAll { selected.contains($0.id) }
-                    selected = []
-                    if items.isEmpty { reset() }
-                case .failure(let err):
-                    statusMessage = "Error: \(err.localizedDescription)"
+        let (writable, needsAdmin) = partitionByWritability(urls)
+
+        if needsAdmin.isEmpty {
+            TrashService.recycle(writable) { result in
+                DispatchQueue.main.async { finishDeletion(removed: result.succeeded) }
+            }
+            return
+        }
+
+        let alert = NSAlert()
+        alert.messageText = "\(needsAdmin.count) item\(needsAdmin.count == 1 ? "" : "s") need administrator permission"
+        alert.informativeText = "These items live in /Library or /var/db and can't be moved to Trash as the current user.\n\n• Delete all with admin — prompts for your password; admin-deleted items are permanent (not recoverable from Trash).\n• Skip admin items — only Trash the \(writable.count) normal item\(writable.count == 1 ? "" : "s")."
+        alert.addButton(withTitle: "Delete all with admin…")
+        alert.addButton(withTitle: "Skip admin items")
+        alert.addButton(withTitle: "Cancel")
+        alert.alertStyle = .warning
+
+        switch alert.runModal() {
+        case .alertFirstButtonReturn:
+            TrashService.recycle(writable) { trashResult in
+                TrashService.adminDelete(needsAdmin) { adminOK in
+                    DispatchQueue.main.async {
+                        let removed = trashResult.succeeded + (adminOK ? needsAdmin : [])
+                        finishDeletion(removed: removed)
+                        if !adminOK {
+                            statusMessage = "Moved \(trashResult.succeeded.count) · admin delete cancelled."
+                        }
+                    }
                 }
             }
+        case .alertSecondButtonReturn:
+            TrashService.recycle(writable) { result in
+                DispatchQueue.main.async {
+                    finishDeletion(removed: result.succeeded)
+                    statusMessage = "Moved \(result.succeeded.count) · skipped \(needsAdmin.count) admin-only."
+                }
+            }
+        default:
+            break
         }
+    }
+
+    private func partitionByWritability(_ urls: [URL]) -> (writable: [URL], needsAdmin: [URL]) {
+        var writable: [URL] = []
+        var needsAdmin: [URL] = []
+        for url in urls {
+            let parent = url.deletingLastPathComponent().path
+            if access(parent, W_OK) == 0 {
+                writable.append(url)
+            } else {
+                needsAdmin.append(url)
+            }
+        }
+        return (writable, needsAdmin)
+    }
+
+    private func finishDeletion(removed: [URL]) {
+        let removedPaths = Set(removed.map { $0.path })
+        items.removeAll { removedPaths.contains($0.url.path) }
+        selected = selected.intersection(Set(items.map { $0.id }))
+        statusMessage = "Removed \(removed.count) items."
+        if items.isEmpty { reset() }
     }
 }
