@@ -1,0 +1,45 @@
+name: AppClean
+options:
+  bundleIdPrefix: com.fri13th
+  deploymentTarget:
+    macOS: "13.0"
+  createIntermediateGroups: true
+
+settings:
+  base:
+    SWIFT_VERSION: "5.9"
+    MARKETING_VERSION: "0.1.0"
+    CURRENT_PROJECT_VERSION: "1"
+    MACOSX_DEPLOYMENT_TARGET: "13.0"
+
+targets:
+  AppClean:
+    type: application
+    platform: macOS
+    sources:
+      - path: Sources/AppClean
+      - path: App/AppIcon.icns
+        buildPhase: resources
+    info:
+      path: App/Info.plist
+      properties:
+        CFBundleName: App Clean
+        CFBundleDisplayName: App Clean
+        CFBundleShortVersionString: "0.1.0"
+        CFBundleVersion: "1"
+        CFBundleIconFile: AppIcon
+        LSMinimumSystemVersion: "13.0"
+        NSHighResolutionCapable: true
+        NSHumanReadableCopyright: ""
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.fri13th.appclean
+        PRODUCT_NAME: AppClean
+        CODE_SIGN_IDENTITY: "-"
+        CODE_SIGN_STYLE: Manual
+        DEVELOPMENT_TEAM: ""
+        ENABLE_HARDENED_RUNTIME: NO
+        ENABLE_APP_SANDBOX: NO
+        GENERATE_INFOPLIST_FILE: NO
+        COMBINE_HIDPI_IMAGES: YES
+        SWIFT_EMIT_LOC_STRINGS: YES
