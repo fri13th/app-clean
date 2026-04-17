@@ -321,45 +321,53 @@ struct ContentView: View {
     private func moveSelectedToTrash() {
         let toTrash = items.filter { selected.contains($0.id) }
         let urls = toTrash.map { $0.url }
-        let (writable, needsAdmin) = partitionByWritability(urls)
+        let (writable, preAdmin) = partitionByWritability(urls)
 
-        if needsAdmin.isEmpty {
-            TrashService.recycle(writable) { result in
-                DispatchQueue.main.async { finishDeletion(removed: result.succeeded) }
-            }
+        if writable.isEmpty {
+            promptAdminChoice(trashed: [], admin: preAdmin)
             return
         }
 
+        TrashService.recycle(writable) { result in
+            DispatchQueue.main.async {
+                // recycle may fail silently on TCC/FDA-protected paths even though parent is writable;
+                // treat those failures as needing admin.
+                let admin = result.failed + preAdmin
+                if admin.isEmpty {
+                    finishDeletion(removed: result.succeeded)
+                } else {
+                    promptAdminChoice(trashed: result.succeeded, admin: admin)
+                }
+            }
+        }
+    }
+
+    private func promptAdminChoice(trashed: [URL], admin: [URL]) {
         let alert = NSAlert()
-        alert.messageText = "\(needsAdmin.count) item\(needsAdmin.count == 1 ? "" : "s") need administrator permission"
-        alert.informativeText = "These items live in /Library or /var/db and can't be moved to Trash as the current user.\n\n• Delete all with admin — prompts for your password; admin-deleted items are permanent (not recoverable from Trash).\n• Skip admin items — only Trash the \(writable.count) normal item\(writable.count == 1 ? "" : "s")."
-        alert.addButton(withTitle: "Delete all with admin…")
-        alert.addButton(withTitle: "Skip admin items")
+        alert.messageText = "\(admin.count) item\(admin.count == 1 ? "" : "s") need administrator permission"
+        let alreadyLine = trashed.isEmpty ? "" : "\(trashed.count) item\(trashed.count == 1 ? " was" : "s were") already moved to Trash.\n\n"
+        alert.informativeText = "\(alreadyLine)These items are in protected locations (e.g. /Library, /var/db, or TCC-protected /var/folders).\n\n• Delete with admin — prompts for password; admin-deleted items are permanent (not recoverable from Trash).\n• Skip — leave them."
+        alert.addButton(withTitle: "Delete with admin…")
+        alert.addButton(withTitle: "Skip")
         alert.addButton(withTitle: "Cancel")
         alert.alertStyle = .warning
 
         switch alert.runModal() {
         case .alertFirstButtonReturn:
-            TrashService.recycle(writable) { trashResult in
-                TrashService.adminDelete(needsAdmin) { adminOK in
-                    DispatchQueue.main.async {
-                        let removed = trashResult.succeeded + (adminOK ? needsAdmin : [])
-                        finishDeletion(removed: removed)
-                        if !adminOK {
-                            statusMessage = "Moved \(trashResult.succeeded.count) · admin delete cancelled."
-                        }
-                    }
+            TrashService.adminDelete(admin) { ok, err in
+                DispatchQueue.main.async {
+                    finishDeletion(removed: trashed + (ok ? admin : []))
+                    if !ok { statusMessage = err ?? "Admin delete failed." }
                 }
             }
         case .alertSecondButtonReturn:
-            TrashService.recycle(writable) { result in
-                DispatchQueue.main.async {
-                    finishDeletion(removed: result.succeeded)
-                    statusMessage = "Moved \(result.succeeded.count) · skipped \(needsAdmin.count) admin-only."
-                }
-            }
+            finishDeletion(removed: trashed)
+            statusMessage = "Trashed \(trashed.count) · skipped \(admin.count) admin-only."
         default:
-            break
+            finishDeletion(removed: trashed)
+            if !trashed.isEmpty {
+                statusMessage = "\(trashed.count) already in Trash before cancel."
+            }
         }
     }
 
