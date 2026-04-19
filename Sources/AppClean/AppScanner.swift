@@ -21,6 +21,46 @@ enum AppScanner {
         return AppInfo(bundleURL: bundleURL, bundleID: bundleID, displayName: name)
     }
 
+    // SIP/TCC-protected Apple caches that can't be moved to Trash even with admin —
+    // the OS regenerates them or blocks deletion outright. Excluding them avoids
+    // surfacing entries the user can't actually remove.
+    private static let protectedNames: Set<String> = [
+        "com.apple.quicklook.thumbnailsagent",
+        "com.apple.siriactionsd",
+        "com.apple.workflowkit.backgroundshortcutrunner",
+        "com.apple.bird",
+        "com.apple.akd",
+        "com.apple.cache_delete",
+        "com.apple.containermanagerd",
+        "com.apple.assistantd",
+        "com.apple.suggestd",
+        "com.apple.parsecd",
+        "com.apple.spotlight",
+        "com.apple.photoanalysisd",
+        "com.apple.icloudnotificationagent",
+        "com.apple.appstoreagent",
+        "com.apple.amsaccountsd",
+        "com.apple.amsengagementd",
+        "com.apple.findmy.fmfcore",
+        "com.apple.findmy.fmipcore",
+        "com.apple.findmy.imagecache",
+        "com.apple.homed",
+        "com.apple.homekit",
+        "com.apple.itunescloudd",
+        "com.apple.geoanalyticsd",
+        "geoservices",
+        "com.apple.ampdevicesagent",
+        "com.apple.applemediaservices",
+        "com.apple.cloudtelemetry",
+        "cloudkit",
+        "gamekit",
+        "familycircle",
+    ]
+
+    private static func isProtected(_ entry: String) -> Bool {
+        protectedNames.contains(entry.lowercased())
+    }
+
     static func scan(for app: AppInfo) -> [LeftoverItem] {
         let home = FileManager.default.homeDirectoryForCurrentUser.path
         var searchDirs: [(String, String)] = [
@@ -85,6 +125,7 @@ enum AppScanner {
         for (dir, category) in searchDirs {
             guard let entries = try? FileManager.default.contentsOfDirectory(atPath: dir) else { continue }
             for entry in entries {
+                if isProtected(entry) { continue }
                 let lower = entry.lowercased()
                 let entryNoExt = (entry as NSString).deletingPathExtension.lowercased()
                 let bundleMatch = !bundleLower.isEmpty
@@ -259,6 +300,7 @@ enum AppScanner {
         for (dir, category) in roots {
             guard let entries = try? FileManager.default.contentsOfDirectory(atPath: dir) else { continue }
             for entry in entries {
+                if isProtected(entry) { continue }
                 let url = URL(fileURLWithPath: dir).appendingPathComponent(entry)
                 let size = directorySize(at: url)
                 items.append(LeftoverItem(url: url, category: category, sizeBytes: size))
