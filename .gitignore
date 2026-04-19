@@ -18,6 +18,9 @@ AppClean.xcodeproj/
 # macOS
 .DS_Store
 
-# Claude Code
+# Editors / tools
 .claude/
+.vscode/
+
+# Release artifacts
 *.zip
